@@ -1,14 +1,25 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 import torch
 
-# Load GPT-2 Medium
-model_name = "gpt2-medium"  # This is the larger, better GPT-2 variant
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForCausalLM.from_pretrained(model_name)
+# Load TinyLlama 1.1B Chat model
+model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
 
-# Important! GPT-2 doesn't have a padding token, so we set it manually
+print(f"🔄 Downloading and loading model: {model_name} ...")
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
+
+# Ensure padding tokens are handled
 tokenizer.pad_token = tokenizer.eos_token
 model.config.pad_token_id = model.config.eos_token_id
+
+# Create a simple text generation pipeline
+generator = pipeline(
+    "text-generation",
+    model=model,
+    tokenizer=tokenizer,
+    device_map="auto",
+    torch_dtype=torch.float16
+)
 
 # Simple chatbot loop
 conversation_history = ""
@@ -19,30 +30,23 @@ while True:
         print("👋 Goodbye!")
         break
 
+    conversation_history += f"User: {user_input}\nAI:"
+
+    response = generator(
+        conversation_history,
+        max_new_tokens=150,
+        do_sample=True,
+        top_k=50,
+        top_p=0.9,
+        temperature=0.7,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+
+    generated_text = response[0]["generated_text"]
+
+    # Extract only the AI's new message
+    ai_reply = generated_text[len(conversation_history):].strip()
+    print(f"\n🤖 AI: {ai_reply}")
+
     # Update conversation history
-    conversation_history += f"User: {user_input}\n"
-
-    # Encode
-    inputs = tokenizer(conversation_history, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-
-    # Generate a reply
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=150,
-            do_sample=True,        # Enable randomness
-            top_k=50,              # Top-K sampling
-            top_p=0.95,            # Nucleus sampling
-            temperature=0.7,       # Slight randomness to improve creativity
-            pad_token_id=tokenizer.eos_token_id
-        )
-
-    # Decode and print
-    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    # Only show new AI-generated part
-    ai_response = generated_text[len(conversation_history):]
-    print(f"\n🤖 AI: {ai_response.strip()}")
-
-    # Update history
-    conversation_history += f"AI: {ai_response.strip()}\n"
+    conversation_history += f" {ai_reply}\n"
