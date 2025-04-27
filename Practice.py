@@ -1,43 +1,41 @@
-from huggingface_hub import snapshot_download
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import GPTJForCausalLM, AutoTokenizer
 import torch
-import os
 
-# Define local temp path
-local_dir = "/tmp/roaster_model"
+# Load GPT-J model and tokenizer from Hugging Face
+model_name = "EleutherAI/gpt-j-6B"  # You can also use "EleutherAI/gpt-neo-2.7B"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = GPTJForCausalLM.from_pretrained(model_name)
 
-# Download model from Hugging Face if not already present
-if not os.path.exists(local_dir):
-    print("🔻 Downloading model to temporary folder...")
-    snapshot_download(repo_id="distilgpt2", local_dir=local_dir)
-    print("✅ Download complete!")
-
-# Load model and tokenizer
-print("🔄 Loading model into memory...")
-tokenizer = AutoTokenizer.from_pretrained(local_dir)
-model = AutoModelForCausalLM.from_pretrained(local_dir)
-print("✅ Model loaded!")
+# Define a context variable
+conversation_history = ""
 
 # Main interaction loop
 while True:
-    prompt = input("\n👾 Enter your prompt (or type 'exit' to quit): ")
-    if prompt.lower() == "exit":
+    user_input = input("\n👾 Enter your prompt (or type 'exit' to quit): ")
+    if user_input.lower() == "exit":
         print("👋 Goodbye!")
         break
 
-    # Tokenize the input
-    inputs = tokenizer(prompt, return_tensors="pt")
+    # Add the user input to conversation history
+    conversation_history += f"User: {user_input}\n"
 
-    # Generate output
+    # Tokenize the conversation history
+    inputs = tokenizer(conversation_history, return_tensors="pt", truncation=True, padding=True, max_length=1024)
+
+    # Generate AI output
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=50,  # number of tokens to generate
-            do_sample=True,     # randomness
+            max_new_tokens=150,
+            do_sample=True,     # Randomness for diverse outputs
             top_k=50,           # Top-k sampling
-            top_p=0.95          # nucleus sampling
+            top_p=0.95          # Nucleus sampling
         )
 
-    # Decode and print the output
+    # Decode and print the response
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    print(f"\n🤖 AI Reply: {response}")
+    ai_reply = response[len(conversation_history):]  # Strip user history from response
+    print(f"\n🤖 AI Reply: {ai_reply}")
+
+    # Update conversation history with AI response
+    conversation_history += f"AI: {ai_reply}\n"
